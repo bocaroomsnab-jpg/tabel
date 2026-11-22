@@ -466,7 +466,7 @@ function finishPunch(photo) {
         showResult(true, 'Сохранено без сети', punchType + ' в ' + hhmm(now) + '. Отправится автоматически, когда появится связь.', '📥');
       } else if (r.ok) {
         if (!session.today) session.today = {};
-        if (punchType === 'Приход') session.today.in = r.time; else session.today.out = r.time;
+        if (punchType === 'Приход') { if (!session.today.in) session.today.in = r.time; session.today.out = null; } else session.today.out = r.time;
         showResult(true, r.message, (r.flags && r.flags.length) ? '⚠ ' + r.flags.join('; ') : 'Спасибо!');
       } else if (r.code === 'bad_pin' || r.code === 'locked' || r.code === 'device_mismatch' || r.code === 'device_taken') {
         toPin(r.message);

@@ -1,12 +1,12 @@
 {
-  "name": "Табель — отметка прихода и ухода",
-  "short_name": "Табель",
+  "name": "Производство — отметка прихода и ухода",
+  "short_name": "Производство",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f3f5f9",
+  "background_color": "#000000",
   "theme_color": "#1f3a5f",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

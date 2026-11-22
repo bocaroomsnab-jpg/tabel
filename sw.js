@@ -1,5 +1,5 @@
 // Service worker: приложение открывается и без сети (кэш оболочки), обновления берутся из сети.
-var CACHE = 'tabel-v1';
+var CACHE = 'tabel-v2';
 var SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {

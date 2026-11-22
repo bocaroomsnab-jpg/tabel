@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Табель">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Табель</title>
+<style>
+  :root { --navy:#1f3a5f; --green:#1e8e5a; --orange:#d9822b; --red:#c0392b; --bg:#f3f5f9; --card:#fff; --muted:#6b7686; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:#17202e;
+    font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  body { padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .screen { display:none; min-height:100%; padding:20px 18px 28px; max-width:520px; margin:0 auto; }
+  .screen.active { display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:22px; margin:6px 0 0; color:var(--navy); }
+  h2 { font-size:18px; margin:0; color:var(--navy); }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border-radius:16px; padding:16px; box-shadow:0 1px 3px rgba(20,30,50,.08); }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  button, .btn { font:inherit; border:0; border-radius:14px; padding:16px; font-weight:600; background:var(--navy); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.45; }
+  button.ghost { background:transparent; color:var(--navy); border:1.5px solid #c9d2e0; }
+  button.link { background:none; color:var(--muted); padding:8px; font-weight:500; text-decoration:underline; }
+  button.big { padding:26px 10px; font-size:22px; }
+  .in { background:var(--green); } .out { background:var(--orange); }
+  input, select, textarea { font:inherit; width:100%; padding:14px; border:1.5px solid #c9d2e0; border-radius:12px; background:#fff; }
+  label { display:block; font-size:14px; color:var(--muted); margin:10px 0 4px; }
+  .list { display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow:auto; }
+  .item { text-align:left; background:#fff; color:#17202e; border:1.5px solid #dfe5ef; padding:14px; font-weight:500; }
+  .item small { display:block; color:var(--muted); font-weight:400; }
+  .pin { text-align:center; font-size:30px; letter-spacing:10px; min-height:52px; padding:10px; }
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .pad button { background:#fff; color:var(--navy); border:1.5px solid #dfe5ef; font-size:24px; padding:16px 0; }
+  .chip { display:inline-block; padding:6px 12px; border-radius:99px; background:#e8eef8; font-weight:600; }
+  .chip.g { background:#dcf3e7; color:#126a40; } .chip.o { background:#fdebd6; color:#9a5712; }
+  .err { color:var(--red); font-weight:600; } .ok { color:var(--green); font-weight:600; }
+  .warn { background:#fff4d6; border-radius:12px; padding:10px 12px; font-size:14px; }
+  video { width:100%; border-radius:16px; background:#000; aspect-ratio:3/4; object-fit:cover; transform:scaleX(-1); }
+  .big-icon { font-size:72px; text-align:center; }
+  .center { text-align:center; }
+  .spacer { flex:1; }
+  .status-line { display:flex; justify-content:space-between; align-items:center; }
+  .badge { background:#c0392b; color:#fff; border-radius:99px; padding:2px 9px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<!-- Выбор сотрудника (первый запуск) -->
+<section id="scr-pick" class="screen">
+  <h1>Кто вы?</h1>
+  <div class="muted">Выберите себя из списка. Это делается один раз: телефон привяжется к вам.</div>
+  <input id="search" type="search" placeholder="Поиск по фамилии" autocomplete="off">
+  <div id="names" class="list"></div>
+  <div id="pick-msg" class="err"></div>
+</section>
+
+<!-- PIN -->
+<section id="scr-pin" class="screen">
+  <h1 id="pin-name"></h1>
+  <div class="muted">Введите ваш PIN</div>
+  <div id="pin-dots" class="card pin"></div>
+  <div id="pin-msg" class="err center"></div>
+  <div class="pad" id="pad"></div>
+  <button id="pin-ok" disabled>Войти</button>
+  <button id="pin-offline" class="ghost" style="display:none">Нет связи: продолжить без сети</button>
+  <button id="pin-change" class="link">Это не я</button>
+</section>
+
+<!-- Главный экран -->
+<section id="scr-main" class="screen">
+  <div class="status-line">
+    <div><h1 id="m-name"></h1><div class="muted" id="m-dept"></div></div>
+    <button id="m-lock" class="link">Выйти</button>
+  </div>
+  <div class="card">
+    <div class="muted">Сегодня</div>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <span class="chip" id="m-in">Приход: —</span>
+      <span class="chip" id="m-out">Уход: —</span>
+    </div>
+  </div>
+  <div id="m-queue" class="warn" style="display:none"></div>
+  <div id="m-failed" class="warn" style="display:none"></div>
+  <div class="row">
+    <button class="big in" id="b-in">Приход</button>
+    <button class="big out" id="b-out">Уход</button>
+  </div>
+  <button class="ghost" id="b-req">Заявка (забыл отметиться, отпуск, больничный)</button>
+  <div id="m-reqs" class="card" style="display:none"></div>
+  <div class="spacer"></div>
+  <div class="muted center" id="m-online"></div>
+</section>
+
+<!-- Отметка: селфи + геолокация -->
+<section id="scr-punch" class="screen">
+  <h2 id="p-title"></h2>
+  <video id="cam" playsinline muted autoplay></video>
+  <input id="file" type="file" accept="image/*" capture="user" style="display:none">
+  <div id="p-geo" class="muted"></div>
+  <div id="p-msg" class="err"></div>
+  <button id="p-shot">Сфотографироваться и отметить</button>
+  <button id="p-file" class="ghost" style="display:none">Сделать фото</button>
+  <button id="p-cancel" class="link">Отмена</button>
+</section>
+
+<!-- Результат -->
+<section id="scr-result" class="screen">
+  <div class="spacer"></div>
+  <div id="r-icon" class="big-icon"></div>
+  <h1 id="r-title" class="center"></h1>
+  <div id="r-text" class="center"></div>
+  <div class="spacer"></div>
+  <button id="r-ok">Готово</button>
+</section>
+
+<!-- Заявка -->
+<section id="scr-req" class="screen">
+  <h2>Заявка руководителю</h2>
+  <div class="card">
+    <label>Вид</label>
+    <select id="q-kind">
+      <option>Исправление</option><option>Отпуск</option><option>Больничный</option><option>Отгул</option>
+    </select>
+    <label id="q-from-l">Дата</label>
+    <input id="q-from" type="date">
+    <div id="q-to-w" style="display:none"><label>По дату</label><input id="q-to" type="date"></div>
+    <div id="q-times">
+      <div class="row">
+        <div><label>Время прихода</label><input id="q-in" type="time"></div>
+        <div><label>Время ухода</label><input id="q-out" type="time"></div>
+      </div>
+      <div class="muted" style="margin-top:6px">Заполните только то, что нужно исправить.</div>
+    </div>
+    <label>Комментарий</label>
+    <textarea id="q-comment" rows="3" maxlength="300" placeholder="Например: забыл отметить уход, телефон разрядился"></textarea>
+  </div>
+  <div id="q-msg"></div>
+  <button id="q-send">Отправить</button>
+  <button id="q-cancel" class="link">Назад</button>
+</section>
+
+<script src="config.js"></script>
+<script>
+(function () {
+'use strict';
+
+var CFG = window.CONFIG || {};
+var $ = function (id) { return document.getElementById(id); };
+var LS = {
+  get: function (k, d) { try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+// ---------- Устройство ----------
+var deviceId = LS.get('deviceId', null);
+if (!deviceId) {
+  deviceId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+    : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  LS.set('deviceId', deviceId);
+}
+
+// ---------- Состояние ----------
+var empName = LS.get('empName', null);
+var session = null;          // {name, pin, dept, today, requests, photoRequired}
+var idleTimer = null;
+var pinBuf = '';
+var camStream = null;
+var punchType = null;
+
+// ---------- Экраны ----------
+function show(id) {
+  Array.prototype.forEach.call(document.querySelectorAll('.screen'), function (s) { s.classList.remove('active'); });
+  $('scr-' + id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function el(tag, attrs, text) {
+  var e = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// ---------- API ----------
+function api(action, data) {
+  var ctrl = new AbortController();
+  var t = setTimeout(function () { ctrl.abort(); }, 25000);
+  var body = Object.assign({ key: CFG.APP_KEY, action: action, device: deviceId }, data || {});
+  return fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(body), signal: ctrl.signal, redirect: 'follow' })
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { ok: false, network: true, message: 'Нет связи с сервером.' }; })
+    .then(function (j) { clearTimeout(t); return j; });
+}
+
+function configured() {
+  return CFG.API_URL && CFG.APP_KEY && CFG.API_URL.indexOf('ВСТАВЬТЕ') < 0 && CFG.APP_KEY.indexOf('ВСТАВЬТЕ') < 0;
+}
+
+// ---------- Выбор сотрудника ----------
+var allNames = [];
+function loadNames() {
+  $('pick-msg').textContent = '';
+  api('names').then(function (r) {
+    if (r.ok) { allNames = r.names; LS.set('names', allNames); }
+    else {
+      allNames = LS.get('names', []);
+      $('pick-msg').textContent = r.message || 'Не удалось загрузить список.';
+    }
+    renderNames();
+  });
+}
+function renderNames() {
+  var q = $('search').value.trim().toLowerCase();
+  var box = $('names');
+  box.textContent = '';
+  allNames.filter(function (n) { return !q || n.name.toLowerCase().indexOf(q) >= 0; }).forEach(function (n) {
+    var b = el('button', { 'class': 'item' }, n.name);
+    if (n.dept) b.appendChild(el('small', null, n.dept));
+    b.onclick = function () { empName = n.name; LS.set('empName', empName); toPin(); };
+    box.appendChild(b);
+  });
+}
+$('search').addEventListener('input', renderNames);
+
+// ---------- PIN ----------
+(function buildPad() {
+  var pad = $('pad');
+  ['1','2','3','4','5','6','7','8','9','⌫','0','OK'].forEach(function (k) {
+    var b = el('button', null, k === 'OK' ? '✓' : k);
+    b.onclick = function () {
+      if (k === '⌫') pinBuf = pinBuf.slice(0, -1);
+      else if (k === 'OK') { submitPin(); return; }
+      else if (pinBuf.length < 6) pinBuf += k;
+      drawPin();
+    };
+    pad.appendChild(b);
+  });
+})();
+function drawPin() {
+  $('pin-dots').textContent = pinBuf.replace(/./g, '●') || ' ';
+  $('pin-ok').disabled = pinBuf.length < 4;
+}
+function toPin(msg) {
+  pinBuf = ''; session = null; drawPin();
+  $('pin-name').textContent = empName;
+  $('pin-msg').textContent = msg || '';
+  $('pin-offline').style.display = 'none';
+  show('pin');
+}
+function submitPin() {
+  if (pinBuf.length < 4) return;
+  $('pin-ok').disabled = true; $('pin-msg').textContent = 'Проверяем…';
+  api('status', { name: empName, pin: pinBuf }).then(function (r) {
+    if (r.ok) { session = { name: r.name, pin: pinBuf, dept: r.dept, today: r.today, requests: r.requests, photoRequired: r.photoRequired }; toMain(); }
+    else if (r.network) {
+      $('pin-msg').textContent = 'Нет связи с сервером.';
+      $('pin-offline').style.display = 'block';
+      $('pin-ok').disabled = false;
+    } else {
+      pinBuf = ''; drawPin();
+      $('pin-msg').textContent = r.message || 'Ошибка';
+    }
+  });
+}
+$('pin-ok').onclick = submitPin;
+$('pin-change').onclick = function () { empName = null; LS.set('empName', null); show('pick'); loadNames(); };
+$('pin-offline').onclick = function () {
+  session = { name: empName, pin: pinBuf, dept: '', today: null, requests: [], photoRequired: true, offlineMode: true };
+  toMain();
+};
+
+// ---------- Главный экран ----------
+function resetIdle() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(function () { if (session) toPin(); }, 5 * 60 * 1000);
+}
+document.addEventListener('click', function () { if (session) resetIdle(); });
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && session) { refreshStatus(); syncQueue(); }
+});
+
+function toMain() {
+  $('m-name').textContent = session.name;
+  $('m-dept').textContent = session.dept || '';
+  drawToday(); drawQueue(); drawRequests();
+  show('main'); resetIdle();
+  updateOnline();
+  syncQueue();
+}
+function drawToday() {
+  var t = session.today;
+  $('m-in').textContent = 'Приход: ' + (t && t.in ? t.in : '—'); $('m-in').className = 'chip' + (t && t.in ? ' g' : '');
+  $('m-out').textContent = 'Уход: ' + (t && t.out ? t.out : '—'); $('m-out').className = 'chip' + (t && t.out ? ' o' : '');
+}
+function refreshStatus() {
+  if (!session) return;
+  api('status', { name: session.name, pin: session.pin }).then(function (r) {
+    if (r.ok) { session.today = r.today; session.requests = r.requests; session.offlineMode = false; session.dept = r.dept; session.photoRequired = r.photoRequired; $('m-dept').textContent = r.dept || ''; drawToday(); drawRequests(); }
+    else if (!r.network) toPin(r.message);
+  });
+}
+function updateOnline() { $('m-online').textContent = navigator.onLine ? '' : 'Нет сети. Отметки сохранятся и отправятся позже.'; }
+window.addEventListener('online', function () { updateOnline(); syncQueue(); if (session) refreshStatus(); });
+window.addEventListener('offline', updateOnline);
+
+$('m-lock').onclick = function () { toPin(); };
+$('b-in').onclick = function () { startPunch('Приход'); };
+$('b-out').onclick = function () { startPunch('Уход'); };
+
+function drawRequests() {
+  var box = $('m-reqs');
+  var list = (session && session.requests) || [];
+  box.textContent = '';
+  if (!list.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.appendChild(el('div', { 'class': 'muted' }, 'Ваши заявки'));
+  list.forEach(function (q) {
+    var line = el('div', null, '№' + q.id + ' · ' + q.kind + ' · ' + q.from + (q.to !== q.from ? '–' + q.to : '') + ' · ');
+    var st = el('span', { 'class': q.status === 'Одобрено' ? 'ok' : (q.status === 'Отклонено' ? 'err' : 'muted') }, q.status || 'Ожидает');
+    line.appendChild(st); line.style.marginTop = '6px';
+    box.appendChild(line);
+  });
+}
+
+// ---------- Очередь офлайн ----------
+function getQueue() { return LS.get('queue', []); }
+function setQueue(q) { LS.set('queue', q); drawQueue(); }
+function drawQueue() {
+  var q = getQueue(), box = $('m-queue');
+  if (!session) return;
+  if (q.length) { box.style.display = 'block'; box.textContent = 'Ждут отправки: ' + q.length + '. Отправятся автоматически, когда появится сеть.'; }
+  else box.style.display = 'none';
+  var f = LS.get('failed', []), fb = $('m-failed');
+  fb.textContent = '';
+  if (f.length) {
+    fb.style.display = 'block';
+    f.forEach(function (x) { fb.appendChild(el('div', null, x.type + ' ' + x.time + ': ' + x.message)); });
+    var b = el('button', { 'class': 'link' }, 'Скрыть'); b.onclick = function () { LS.set('failed', []); drawQueue(); };
+    fb.appendChild(b);
+  } else fb.style.display = 'none';
+}
+var syncing = false;
+function syncQueue() {
+  if (syncing || !configured()) return;
+  var q = getQueue();
+  if (!q.length) return;
+  syncing = true;
+  (function next() {
+    q = getQueue();
+    if (!q.length) { syncing = false; if (session) refreshStatus(); return; }
+    var item = q[0];
+    api('punch', Object.assign({}, item.payload, { offline: true })).then(function (r) {
+      if (r.network) { syncing = false; return; }
+      q = getQueue(); q.shift(); setQueue(q);
+      if (!r.ok && r.code !== 'dup_in') {
+        var f = LS.get('failed', []);
+        f.push({ type: item.payload.type, time: item.label, message: r.message || 'Отклонено' });
+        LS.set('failed', f); drawQueue();
+      }
+      next();
+    });
+  })();
+}
+
+// ---------- Отметка ----------
+function hhmm(d) { return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+
+function getPos() {
+  return new Promise(function (res) {
+    if (!navigator.geolocation) return res({ error: 'Геолокация недоступна' });
+    navigator.geolocation.getCurrentPosition(
+      function (p) { res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }); },
+      function (e) { res({ error: e && e.code === 1 ? 'Геолокация запрещена. Разрешите её в настройках браузера.' : 'Не удалось определить местоположение' }); },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+  });
+}
+
+var geoPromise = null, geoResult = null;
+function startPunch(type) {
+  punchType = type;
+  $('p-title').textContent = type + ': селфи';
+  $('p-msg').textContent = '';
+  $('p-geo').textContent = 'Определяем местоположение…';
+  $('p-shot').disabled = true; $('p-file').style.display = 'none';
+  geoResult = null;
+  geoPromise = getPos().then(function (g) {
+    geoResult = g;
+    $('p-geo').textContent = g.error ? '⚠ ' + g.error : '📍 Местоположение определено (±' + Math.round(g.acc) + ' м)';
+    return g;
+  });
+  show('punch');
+  openCamera();
+}
+function openCamera() {
+  stopCamera();
+  var v = $('cam'); v.style.display = 'block';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { cameraFallback('Камера недоступна в этом браузере.'); return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 1280 } }, audio: false })
+    .then(function (s) { camStream = s; v.srcObject = s; return v.play().catch(function () {}); })
+    .then(function () { $('p-shot').disabled = false; })
+    .catch(function () { cameraFallback('Не удалось включить камеру. Разрешите доступ к камере.'); });
+}
+function cameraFallback(msg) {
+  $('p-msg').textContent = msg;
+  $('cam').style.display = 'none';
+  $('p-shot').style.display = 'none';
+  $('p-file').style.display = 'block';
+}
+function stopCamera() {
+  if (camStream) { camStream.getTracks().forEach(function (t) { t.stop(); }); camStream = null; }
+  $('cam').srcObject = null;
+}
+function resetPunchUi() { $('p-shot').style.display = 'block'; $('p-file').style.display = 'none'; $('cam').style.display = 'block'; }
+
+function compress(source, w, h) {
+  var max = 640, k = Math.min(1, max / Math.max(w, h));
+  var c = document.createElement('canvas');
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.65);
+}
+$('p-shot').onclick = function () {
+  var v = $('cam');
+  if (!v.videoWidth) return;
+  finishPunch(compress(v, v.videoWidth, v.videoHeight));
+};
+$('p-file').onclick = function () { $('file').click(); };
+$('file').onchange = function () {
+  var f = this.files && this.files[0];
+  if (!f) return;
+  var img = new Image();
+  img.onload = function () { finishPunch(compress(img, img.naturalWidth, img.naturalHeight)); URL.revokeObjectURL(img.src); };
+  img.src = URL.createObjectURL(f);
+  this.value = '';
+};
+$('p-cancel').onclick = function () { stopCamera(); resetPunchUi(); show('main'); };
+
+function finishPunch(photo) {
+  stopCamera();
+  $('p-shot').disabled = true;
+  $('p-msg').textContent = 'Отправляем…';
+  var now = new Date();
+  Promise.resolve(geoPromise).then(function (g) {
+    g = g || {};
+    var payload = {
+      name: session.name, pin: session.pin, type: punchType, photo: photo,
+      lat: g.error ? null : (g.lat === undefined ? null : g.lat),
+      lng: g.error ? null : (g.lng === undefined ? null : g.lng),
+      acc: g.error ? null : (g.acc === undefined ? null : g.acc),
+      clientTime: now.toISOString()
+    };
+    return api('punch', payload).then(function (r) {
+      resetPunchUi();
+      if (r.network) {
+        var q = getQueue();
+        if (q.length >= 15) { showResult(false, 'Нет связи', 'Слишком много неотправленных отметок. Подключитесь к сети.'); return; }
+        q.push({ payload: payload, label: hhmm(now) }); setQueue(q);
+        showResult(true, 'Сохранено без сети', punchType + ' в ' + hhmm(now) + '. Отправится автоматически, когда появится связь.', '📥');
+      } else if (r.ok) {
+        if (!session.today) session.today = {};
+        if (punchType === 'Приход') session.today.in = r.time; else session.today.out = r.time;
+        showResult(true, r.message, (r.flags && r.flags.length) ? '⚠ ' + r.flags.join('; ') : 'Спасибо!');
+      } else if (r.code === 'bad_pin' || r.code === 'locked' || r.code === 'device_mismatch' || r.code === 'device_taken') {
+        toPin(r.message);
+      } else {
+        showResult(false, 'Не получилось', r.message || 'Ошибка');
+      }
+    });
+  });
+}
+function showResult(ok, title, text, icon) {
+  $('r-icon').textContent = icon || (ok ? '✅' : '❌');
+  $('r-title').textContent = title;
+  $('r-text').textContent = text || '';
+  $('r-title').className = 'center ' + (ok ? 'ok' : 'err');
+  show('result');
+}
+$('r-ok').onclick = function () { if (session) { drawToday(); drawQueue(); show('main'); resetIdle(); refreshStatus(); } else show('pin'); };
+
+// ---------- Заявки ----------
+function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function kindChanged() {
+  var corr = $('q-kind').value === 'Исправление';
+  $('q-times').style.display = corr ? 'block' : 'none';
+  $('q-to-w').style.display = corr ? 'none' : 'block';
+  $('q-from-l').textContent = corr ? 'Дата' : 'С даты';
+}
+$('q-kind').onchange = kindChanged;
+$('b-req').onclick = function () {
+  $('q-msg').textContent = ''; $('q-comment').value = '';
+  $('q-from').value = ymd(new Date()); $('q-to').value = ymd(new Date());
+  $('q-in').value = ''; $('q-out').value = '';
+  kindChanged(); show('req');
+};
+$('q-cancel').onclick = function () { show('main'); };
+$('q-send').onclick = function () {
+  var msg = $('q-msg');
+  msg.className = 'muted'; msg.textContent = 'Отправляем…';
+  $('q-send').disabled = true;
+  api('request', {
+    name: session.name, pin: session.pin, kind: $('q-kind').value,
+    from: $('q-from').value, to: $('q-to').value || $('q-from').value,
+    inTime: $('q-in').value, outTime: $('q-out').value, comment: $('q-comment').value
+  }).then(function (r) {
+    $('q-send').disabled = false;
+    if (r.ok) { msg.className = 'ok'; msg.textContent = r.message; setTimeout(function () { show('main'); refreshStatus(); }, 1500); }
+    else if (r.code === 'bad_pin' || r.code === 'locked' || r.code === 'device_mismatch') toPin(r.message);
+    else { msg.className = 'err'; msg.textContent = r.network ? 'Для заявки нужна связь с сервером.' : (r.message || 'Ошибка'); }
+  });
+};
+
+// ---------- Запуск ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+(function init() {
+  if (!configured()) {
+    show('pick');
+    $('names').textContent = '';
+    $('pick-msg').textContent = 'Приложение не настроено: впишите адрес сервера и ключ в файл config.js.';
+    return;
+  }
+  if (empName) toPin(); else { show('pick'); loadNames(); }
+})();
+
+})();
+</script>
+</body>
+</html>

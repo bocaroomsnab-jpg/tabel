@@ -46,6 +46,27 @@
   .warn { background:#fff4d6; border-radius:12px; padding:10px 12px; font-size:14px; }
   video { width:100%; border-radius:16px; background:#000; aspect-ratio:3/4; object-fit:cover; transform:scaleX(-1); }
   .big-icon { font-size:72px; text-align:center; }
+  #r-text { white-space:pre-line; line-height:1.5; }
+  .period-nav { display:flex; align-items:center; gap:10px; }
+  .period-nav button { padding:10px 16px; font-size:20px; line-height:1; }
+  .period-nav div { flex:1; font-weight:600; }
+  .hsum { display:flex; justify-content:space-around; text-align:center; }
+  .hsum b { display:block; font-size:24px; color:var(--navy); }
+  .hsum span { font-size:13px; color:var(--muted); }
+  .hdays { padding:4px 0; }
+  .hrow { display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid #eef1f5; }
+  .hrow:last-child { border-bottom:0; }
+  .hrow .d { width:64px; font-weight:600; }
+  .hrow .d small { display:block; font-weight:400; color:var(--muted); font-size:12px; }
+  .hrow .t { flex:1; color:var(--muted); font-size:14px; }
+  .hrow .v { min-width:44px; text-align:center; font-weight:700; border-radius:8px; padding:4px 6px; }
+  .hrow.off { background:#faf3f3; }
+  .hrow.future { opacity:.45; }
+  .v.bad { background:#ff6b6b; color:#fff; } .v.q { background:#ffe066; } .v.abs { background:#bcd9f5; } .v.ot { background:#ffd8a8; }
+  .streak { display:flex; align-items:center; gap:10px; font-weight:600; }
+  .streak b { font-size:26px; min-width:1.4em; text-align:center; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .rbadge { display:inline-flex; align-items:center; gap:5px; background:#f3f5f9; border-radius:99px; padding:5px 10px; font-size:13px; }
   .center { text-align:center; }
   .spacer { flex:1; }
   .status-line { display:flex; justify-content:space-between; align-items:center; }
@@ -88,6 +109,7 @@
       <span class="chip" id="m-out">Уход: —</span>
     </div>
   </div>
+  <div id="m-rewards" class="card" style="display:none"></div>
   <div id="m-queue" class="warn" style="display:none"></div>
   <div id="m-failed" class="warn" style="display:none"></div>
   <div class="row">
@@ -95,9 +117,27 @@
     <button class="big out" id="b-out">Уход</button>
   </div>
   <button class="ghost" id="b-req">Заявка (забыл отметиться, отпуск, больничный)</button>
+  <button class="ghost" id="b-hours">Мои часы</button>
   <div id="m-reqs" class="card" style="display:none"></div>
   <div class="spacer"></div>
   <div class="muted center" id="m-online"></div>
+</section>
+
+<!-- Мои часы за период -->
+<section id="scr-hours" class="screen">
+  <div class="status-line">
+    <h2>Мои часы</h2>
+    <button id="h-back" class="link">Назад</button>
+  </div>
+  <div class="period-nav">
+    <button id="h-prev" class="ghost" aria-label="Предыдущий период">‹</button>
+    <div id="h-label" class="center"></div>
+    <button id="h-next" class="ghost" aria-label="Следующий период">›</button>
+  </div>
+  <div id="h-sum" class="card hsum"></div>
+  <div id="h-msg" class="muted center"></div>
+  <div id="h-days" class="card hdays"></div>
+  <div class="muted center" style="font-size:13px">«П» — нет отметки в рабочий день, «?» — смена не закрыта, О/Б/Г — отпуск, больничный, отгул. Ошибка? Подайте заявку.</div>
 </section>
 
 <!-- Отметка: селфи + геолокация -->
@@ -259,7 +299,7 @@ function submitPin() {
   if (pinBuf.length < 4) return;
   $('pin-ok').disabled = true; $('pin-msg').textContent = 'Проверяем…';
   api('status', { name: empName, pin: pinBuf }).then(function (r) {
-    if (r.ok) { session = { name: r.name, pin: pinBuf, dept: r.dept, today: r.today, requests: r.requests, photoRequired: r.photoRequired }; toMain(); }
+    if (r.ok) { session = { name: r.name, pin: pinBuf, dept: r.dept, today: r.today, requests: r.requests, photoRequired: r.photoRequired, streak: r.streak, badges: r.badges }; toMain(); }
     else if (r.network) {
       $('pin-msg').textContent = 'Нет связи с сервером.';
       $('pin-offline').style.display = 'block';
@@ -290,7 +330,7 @@ document.addEventListener('visibilitychange', function () {
 function toMain() {
   $('m-name').textContent = session.name;
   $('m-dept').textContent = session.dept || '';
-  drawToday(); drawQueue(); drawRequests();
+  drawToday(); drawQueue(); drawRequests(); drawRewards();
   show('main'); resetIdle();
   updateOnline();
   syncQueue();
@@ -303,7 +343,7 @@ function drawToday() {
 function refreshStatus() {
   if (!session) return;
   api('status', { name: session.name, pin: session.pin }).then(function (r) {
-    if (r.ok) { session.today = r.today; session.requests = r.requests; session.offlineMode = false; session.dept = r.dept; session.photoRequired = r.photoRequired; $('m-dept').textContent = r.dept || ''; drawToday(); drawRequests(); }
+    if (r.ok) { session.today = r.today; session.requests = r.requests; session.offlineMode = false; session.dept = r.dept; session.photoRequired = r.photoRequired; if (r.streak !== undefined) { session.streak = r.streak; session.badges = r.badges; } $('m-dept').textContent = r.dept || ''; drawToday(); drawRequests(); drawRewards(); }
     else if (!r.network) toPin(r.message);
   });
 }
@@ -315,6 +355,62 @@ $('m-lock').onclick = function () { toPin(); };
 $('b-in').onclick = function () { startPunch('Приход'); };
 $('b-out').onclick = function () { startPunch('Уход'); };
 
+// ---------- Мои часы ----------
+var hoursFrom = '';
+$('b-hours').onclick = function () { hoursFrom = ''; show('hours'); loadHours(); };
+$('h-back').onclick = function () { show('main'); };
+$('h-prev').onclick = function () { if (this.dataset.to) { hoursFrom = this.dataset.to; loadHours(); } };
+$('h-next').onclick = function () { if (this.dataset.to) { hoursFrom = this.dataset.to; loadHours(); } };
+function loadHours() {
+  $('h-msg').textContent = 'Загружаем…';
+  $('h-prev').disabled = true; $('h-next').disabled = true;
+  api('hours', { name: session.name, pin: session.pin, from: hoursFrom }).then(function (r) {
+    if (!r.ok) {
+      if (r.code === 'bad_pin' || r.code === 'locked' || r.code === 'device_mismatch' || r.code === 'device_taken') { toPin(r.message); return; }
+      $('h-msg').textContent = r.network ? 'Нет связи. Часы можно посмотреть, когда появится интернет.'
+        : (r.code === 'bad_action' ? 'Эта функция ещё не включена на сервере.' : (r.message || 'Ошибка'));
+      return;
+    }
+    $('h-msg').textContent = '';
+    $('h-label').textContent = r.label;
+    $('h-prev').dataset.to = r.prev || ''; $('h-prev').disabled = !r.prev;
+    $('h-next').dataset.to = r.next || ''; $('h-next').disabled = !r.next;
+    var sum = $('h-sum'); sum.textContent = '';
+    [[r.total, 'часов'], [r.worked, 'дней']].forEach(function (x) {
+      var d = el('div'); d.appendChild(el('b', null, String(x[0]))); d.appendChild(el('span', null, x[1])); sum.appendChild(d);
+    });
+    var box = $('h-days'); box.textContent = '';
+    r.days.forEach(function (d) {
+      var row = el('div', { 'class': 'hrow' + (d.off ? ' off' : '') + (d.future ? ' future' : '') });
+      var dd = el('div', { 'class': 'd' }, d.date); dd.appendChild(el('small', null, d.dow)); row.appendChild(dd);
+      row.appendChild(el('div', { 'class': 't' }, d.in ? d.in + '–' + (d.out || '…') + (d.split ? ' (с перерывом)' : '') : ''));
+      var v = d.value, cls = 'v';
+      if (v === 'П') cls += ' bad'; else if (v === '?') cls += ' q'; else if (v === 'О' || v === 'Б' || v === 'Г') cls += ' abs';
+      row.appendChild(el('div', { 'class': cls }, v));
+      box.appendChild(row);
+    });
+  });
+}
+
+// Серия без опозданий и значки (сервер присылает streak и badges; если их нет — блок скрыт)
+function drawRewards() {
+  var box = $('m-rewards');
+  box.textContent = '';
+  if (!session || session.streak === undefined || session.streak === null) { box.style.display = 'none'; return; }
+  var n = session.streak, line = el('div', { 'class': 'streak' });
+  var a = n % 10, b = n % 100;
+  var words = (a === 1 && b !== 11) ? 'рабочий день' : (a >= 2 && a <= 4 && (b < 10 || b >= 20)) ? 'рабочих дня' : 'рабочих дней';
+  line.appendChild(el('b', null, n > 0 ? '🔥' : '🌱'));
+  line.appendChild(el('span', null, n > 0 ? n + ' ' + words + ' подряд без опозданий' : 'Приходите вовремя — начнётся серия'));
+  box.appendChild(line);
+  var list = session.badges || [];
+  if (list.length) {
+    var bx = el('div', { 'class': 'badges' });
+    list.forEach(function (x) { bx.appendChild(el('span', { 'class': 'rbadge', title: x.title }, x.icon + ' ' + x.title)); });
+    box.appendChild(bx);
+  }
+  box.style.display = 'block';
+}
 function drawRequests() {
   var box = $('m-reqs');
   var list = (session && session.requests) || [];
@@ -467,7 +563,9 @@ function finishPunch(photo) {
       } else if (r.ok) {
         if (!session.today) session.today = {};
         if (punchType === 'Приход') { if (!session.today.in) session.today.in = r.time; session.today.out = null; } else session.today.out = r.time;
-        showResult(true, r.message, (r.flags && r.flags.length) ? '⚠ ' + r.flags.join('; ') : 'Спасибо!');
+        if (r.streak !== undefined) { session.streak = r.streak; session.badges = r.badges; }
+        var txt = (r.flags && r.flags.length) ? '⚠ ' + r.flags.join('; ') + (r.cheer ? '\n\n' + r.cheer : '') : (r.cheer || 'Спасибо!');
+        showResult(true, r.message, txt, (r.cheer && r.cheer.indexOf('Новый значок') >= 0) ? '🏅' : null);
       } else if (r.code === 'bad_pin' || r.code === 'locked' || r.code === 'device_mismatch' || r.code === 'device_taken') {
         toPin(r.message);
       } else {
